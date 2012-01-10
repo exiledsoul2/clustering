@@ -344,7 +344,7 @@ public:
 			//thisEdge->setRobustKernel(true);
 			//thisEdge->setHuberWidth(5.0);
 			if(
-					((thisEdge->vertices()[1])->id() - (thisEdge->vertices()[0])->id())
+					std::abs((thisEdge->vertices()[1])->id() - (thisEdge->vertices()[0])->id())
 					==1
 			)
 			{
@@ -730,13 +730,19 @@ public:
 
 			std::vector<int> rejected;
 
+			int oldSize = selectedClusters.size();
+
 			JC(H,membership,iterations, rejected, goodClusters.size());
 
 			goodClusters.clear();
 			selectedClusters.clear();
 
 			selectedClusters.insert(H.begin(),H.end());
-			rejectedClusters.clear();
+
+			if(selectedClusters.size() > oldSize)
+			{
+				rejectedClusters.clear();
+			}
 			rejectedClusters.insert(rejected.begin(), rejected.end());
 
 			display(selectedClusters);

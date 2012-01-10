@@ -1,8 +1,10 @@
 #include "Simulator/Simulator.hpp"
 
 //#include <Optimizer_g2o.hpp>
-#include <OptCluster.hpp>
+//#include <OptCluster.hpp>
 //#include <ClusterJCBB.hpp>
+#include<PersisCluster.hpp>
+
 using namespace Simulator;
 #define STEP_LENGTH 1.0
 
@@ -109,7 +111,14 @@ int main(int argc, char** argv)
 		}
 	}
 	
-	optimizer.run(numIterations, clusterThreshold);
+	//optimizer.run(numIterations, clusterThreshold);
+
+	optimizer.run(numIterations, clusterThreshold,1100);
+	optimizer.run(numIterations, clusterThreshold, 2400);
+	optimizer.run(numIterations, clusterThreshold, 3700);
+	optimizer.run(numIterations, clusterThreshold, 5400);
+	optimizer.run(numIterations, clusterThreshold, 7000);
+
 
 	//std::vector<double> res;
 	//std::cout<<optimizer.optimize(30)<<std::endl;

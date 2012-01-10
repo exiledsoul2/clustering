@@ -78,6 +78,11 @@ public:
 		else
 			return -2;
 	}
+	void clear()
+	{
+		_clusters.clear();
+		_membershipLookUp.clear();
+	}
 };
 
 
@@ -119,12 +124,46 @@ class GraphStorage
 			e.transform = thisEdge->measurement();
 			e.information = thisEdge->information();
 
-			std::cout<<e.from<<" > "<<e.to<<std::endl;
+			//std::cout<<e.from<<" > "<<e.to<<std::endl;
 
 			_edges.push_back(e);
 
 		}
 
+		std::cout<<_vertices.size()<<" vertices stored"<<std::endl;
+		std::cout<<_edges.size()<<" edges stored"<<std::endl;
+
+	}
+
+	void store(g2o::OptimizableGraph::VertexSet& vSet, g2o::OptimizableGraph::EdgeSet& eSet)
+	{
+		_vertices.reserve(vSet.size());
+
+		g2o::OptimizableGraph::VertexSet::iterator it = vSet.begin(), end = vSet.end();
+		for( ; it!=end ; it++)
+		{
+			_vertices.push_back(dynamic_cast<g2o::VertexSE2*>(*it)->estimate());
+		}
+
+		/*
+		g2o::OptimizableGraph::EdgeSet::iterator it = eSet.begin(),
+				end = eSet.end();
+
+
+		for( ; it!=end ; it++)
+		{
+			g2o::EdgeSE2* thisEdge = dynamic_cast<g2o::EdgeSE2*>(*it);
+			_edge e;
+			e.from = thisEdge->vertices()[0]->id();
+			e.to = thisEdge->vertices()[1]->id();
+			e.transform = thisEdge->measurement();
+			e.information = thisEdge->information();
+
+			std::cout<<e.from<<" > "<<e.to<<std::endl;
+
+			_edges.push_back(e);
+		}
+		*/
 		std::cout<<_vertices.size()<<" vertices stored"<<std::endl;
 		std::cout<<_edges.size()<<" odom stored"<<std::endl;
 
@@ -163,6 +202,12 @@ class GraphStorage
 			//optimizer.addEdge(thisEdge);
 		}
 
+
+	}
+
+	void clear()
+	{
+		_vertices.clear(); _edges.clear();
 	}
 
 };
@@ -197,7 +242,7 @@ class ClusterOptimizer
 
 	// For graph "refreshing" ..
 
-	GraphStorage graphStorage;
+	GraphStorage graphStorage, graphSubSet;
 	ClusterManager clusterManager;
 
 public:
@@ -210,14 +255,18 @@ public:
 		vertexCount = 0;
 		initialized = false;
 	}
-	bool write(std::string filename)
+	bool write(std::string filename, int maxVertexID = -1)
 	{
+		if(maxVertexID == -1 ) maxVertexID = optimizer.vertices().size();
 		std::ofstream out(filename.c_str());
 		if(!out.good()) std::cerr<<"Unable to open file "<<std::endl;
 
 		for(size_t i=0; i<_vertices.size();i++)
 		{
-			out<<"VERTEX_SE2 "<<dynamic_cast<g2o::VertexSE2*>(_vertices[i])->id()<<" "; dynamic_cast<g2o::VertexSE2*>(_vertices[i])->write(out); out<<std::endl;
+			if(_vertices[i]->id()< maxVertexID)
+			{
+				out<<"VERTEX_SE2 "<<dynamic_cast<g2o::VertexSE2*>(_vertices[i])->id()<<" "; dynamic_cast<g2o::VertexSE2*>(_vertices[i])->write(out); out<<std::endl;
+			}
 		}
 
 
@@ -225,7 +274,10 @@ public:
 		for(size_t i=0; i<_odomSet.size(); i++)
 		{
 			g2o::EdgeSE2* thisEdge = dynamic_cast<g2o::EdgeSE2*>(_odomSet[i]);
-			out<<"EDGE_SE2 "<<thisEdge->vertices()[0]->id()<<" "<<thisEdge->vertices()[1]->id()<<" "; thisEdge->write(out); out<<std::endl;
+			if(thisEdge->vertices()[0]->id()< maxVertexID and thisEdge->vertices()[1]->id()< maxVertexID)
+			{
+				out<<"EDGE_SE2 "<<thisEdge->vertices()[0]->id()<<" "<<thisEdge->vertices()[1]->id()<<" "; thisEdge->write(out); out<<std::endl;
+			}
 		}
 
 
@@ -235,7 +287,10 @@ public:
 			if(i<_edgeSetEnabled.size() and _edgeSetEnabled[i])
 			{
 				g2o::EdgeSE2* thisEdge = dynamic_cast<g2o::EdgeSE2*>(_edgeSet[i]);
-				out<<"EDGE_SE2 "<<thisEdge->vertices()[0]->id()<<" "<<thisEdge->vertices()[1]->id()<<" "; thisEdge->write(out); out<<std::endl;
+				if(thisEdge->vertices()[0]->id()< maxVertexID and thisEdge->vertices()[1]->id()< maxVertexID)
+				{
+					out<<"EDGE_SE2 "<<thisEdge->vertices()[0]->id()<<" "<<thisEdge->vertices()[1]->id()<<" "; thisEdge->write(out); out<<std::endl;
+				}
 			}
 		}
 
@@ -344,7 +399,7 @@ public:
 			//thisEdge->setRobustKernel(true);
 			//thisEdge->setHuberWidth(5.0);
 			if(
-					((thisEdge->vertices()[1])->id() - (thisEdge->vertices()[0])->id())
+					std::abs((thisEdge->vertices()[1])->id() - (thisEdge->vertices()[0])->id())
 					==1
 			)
 			{
@@ -361,6 +416,27 @@ public:
 		std::sort(_edgeSet.begin(),_edgeSet.end(),loopSort);
 		std::cerr<<"Read Done!"<<std::endl;
 		return true;
+	}
+
+	void getSubSet(g2o::SparseOptimizer& optimizer, int maxVertexID, g2o::OptimizableGraph::VertexSet& vSet, g2o::OptimizableGraph::EdgeSet& eSet)
+	{
+		for(size_t i=0; i< maxVertexID ; i++)
+		{
+			vSet.insert(
+					dynamic_cast<g2o::OptimizableGraph::Vertex*>(optimizer.vertices().find(i)->second)
+					);
+		}
+
+		g2o::OptimizableGraph::EdgeSet::iterator it = optimizer.edges().begin() ,
+				end = optimizer.edges().end();
+
+		for( ;it!=end ; it++)
+		{
+			if((*it)->vertices()[0]->id() < maxVertexID and  (*it)->vertices()[1]->id() < maxVertexID )
+			{
+				eSet.insert(*it);
+			}
+		}
 	}
 
 	int initializeCluster(int clusterID, const std::vector<int>& membership, g2o::OptimizableGraph::EdgeSet& activeEdges,
@@ -540,7 +616,7 @@ public:
 		std::cout<<"ChiSqaure "<<chiSquare<<"/"<<threshold<<" "
 				<<optimizer.activeChi2()<<"/"<<allThreshold<<std::endl;
 
-		if (chiSquare < threshold and optimizer.activeChi2()< allThreshold) //  // and
+		if (chiSquare < threshold )// and optimizer.activeChi2()< allThreshold) //  // and
 			return true;
 		else
 		{
@@ -627,8 +703,29 @@ public:
 		std::cout<<std::endl;
 	}
 
-	void run(int iterations, int clusterThreshold)
+	void run(int iterations, int clusterThreshold, int maxVertexID = -1)
 	{
+		if(maxVertexID==-1)
+		{
+			maxVertexID = optimizer.vertices().size();
+		}
+		/*
+		g2o::OptimizableGraph::VertexSet vSet;
+		g2o::OptimizableGraph::EdgeSet eSet;
+
+		std::cerr<<"getting subset .. "<<std::endl;
+		getSubSet(optimizer,1100,vSet,eSet);
+		std::cerr<<"done "<<std::endl;
+
+		std::cerr<<" Storing .. "<<std::endl;
+		graphSubSet.store(vSet,eSet);
+		std::cerr<<" Done "<<std::endl;
+
+		*/
+        // Store this subset somewhere .. and reload it during the optimization !!
+		// write a function in graph storage that can store a graph when presented
+		// as vSet and eSet
+
 		std::ofstream mFile("membership.txt");
 
 		std::cerr<<"run"<<std::endl;
@@ -636,9 +733,14 @@ public:
 
 		for(size_t i =0 , runTill = _edgeSet.size() ; i<runTill; i++)
 		{
-			std::cout<<_edgeSet[i]->vertices()[0]->id()<<" -> "<<_edgeSet[i]->vertices()[1]->id()<<std::endl;
-			loops.push_back(_edgeSet[i]->vertices()[0]->id());
-			loops.push_back(_edgeSet[i]->vertices()[1]->id());
+			int start = _edgeSet[i]->vertices()[0]->id();
+			int end = _edgeSet[i]->vertices()[1]->id();
+			if(start<maxVertexID and end<maxVertexID)
+			{
+				std::cout<<_edgeSet[i]->vertices()[0]->id()<<" -> "<<_edgeSet[i]->vertices()[1]->id()<<std::endl;
+				loops.push_back(start);
+				loops.push_back(end);
+			}
 		}
 
 		// Form clusters //
@@ -646,9 +748,8 @@ public:
 		int clusterCount;
 		clusterizer.clusterize(loops,clusterThreshold, membership, clusterCount);
 
-
 #if 1
-		for(size_t i =0 ; i<_edgeSet.size(); i++)
+		for(size_t i =0 ; i<membership.size(); i++)
 		{
 			mFile<<membership[i]<<" ";
 		}
@@ -663,12 +764,14 @@ public:
 			IC(i,membership,iterations);
 
 		}
+
 		clusterManager.update(membership,_edgeSet,clusterCount);
 
 		for(size_t i=0 ; i<membership.size(); i++)
 		{
 			std::cout<<membership[i]<<" ";
 		}
+
 		std::cout<<std::endl;
 
 		std::set<int> goodClusters,			// Clusters selected in every iteration
@@ -706,19 +809,20 @@ public:
 			optimizer.computeActiveErrors();
 
 			done = true;
-			for(size_t i=0; i<_edgeSet.size(); i++)
+			std::cerr<<"Post Optimization membership test .. "<<std::endl;
+			for(size_t i=0; i<membership.size(); i++)
 			{
 				_edgeSet[i]->computeError();
-				if(	membership[i]>=0
+				if(	membership[i]>=0 and membership[i]<clusterCount
 					and selectedClusters.find(membership[i])==selectedClusters.end()
 					and rejectedClusters.find(membership[i])==rejectedClusters.end()
 					and	_edgeSet[i]->chi2() < 5.99 )
 				{
-					//std::cout<<"["<<membership[i]<<"]";
+					std::cout<<"["<<membership[i]<<"]";
 					goodClusters.insert(membership[i]);
 					done = false;
 				}
-				//else{	std::cout<<"[X]";}
+				else{	std::cout<<"[X]";}
 			}
 
 
@@ -730,13 +834,20 @@ public:
 
 			std::vector<int> rejected;
 
+
+			int oldSize = selectedClusters.size();
+
 			JC(H,membership,iterations, rejected, goodClusters.size());
 
 			goodClusters.clear();
 			selectedClusters.clear();
 
 			selectedClusters.insert(H.begin(),H.end());
-			rejectedClusters.clear();
+
+			if(selectedClusters.size() > oldSize) // as long as we are compairing against the same set .. reject set should grow
+			{
+				rejectedClusters.clear();
+			}
 			rejectedClusters.insert(rejected.begin(), rejected.end());
 
 			display(selectedClusters);
@@ -753,9 +864,6 @@ public:
 		}
 
 		reload();
-		write("second.g2o");
-
-
 		H.clear();
 		H.insert(H.end(),selectedClusters.begin(), selectedClusters.end());
 
@@ -773,10 +881,21 @@ public:
 
 		optimizer.vertex(0)->setFixed(true);
 		optimizer.initializeOptimization(activeEdges);
-		optimizer.optimize(iterations*2);
+		optimizer.optimize(iterations);
 		optimizer.computeActiveErrors();
 
-		for(size_t i=0; i<_edgeSet.size(); i++)
+		graphStorage.clear();
+		graphStorage.store(optimizer);
+		clusterManager.clear();
+
+		reload();
+
+		std::stringstream fname;
+		fname<<maxVertexID<<"_second.g2o";
+		write(fname.str(),maxVertexID);
+
+
+		for(size_t i=0; i<membership.size(); i++)
 		{
 			_edgeSet[i]->computeError();
 			if(	_edgeSet[i]->chi2() < 5.99 )
@@ -785,9 +904,6 @@ public:
 			}
 			else{	std::cout<<"[X]";}
 		}
-
-		reload();
-		write("check.g2o");
 
 		for(size_t i=0 ; i<membership.size() ; i++)
 		{

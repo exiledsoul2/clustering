@@ -30,6 +30,13 @@ public:
 	// Assumes that in the vector the values are passed as (start_1,end_1), (start_2,end_2), ...
 	void clusterize( const std::vector<int> loops , const int threshold, std::vector<int>& membership, int& clusterCount)
 	{
+		if(loops.size() < 2)
+		{
+			std::cerr<<"clusterize(): "<<__LINE__<<" no loops to make clusters"<<std::endl;
+			clusterCount = 0;
+			membership = std::vector<int>();
+			return;
+		}
 		_clustersFound.clear();
 		membership.clear();
 
