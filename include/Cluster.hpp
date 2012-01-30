@@ -21,6 +21,21 @@ struct cluster
 
 	cluster(): startLow(-1), startHigh(-1), endLow(-1), endHigh(-1), size(0) {}
 	cluster(int start, int end) : startLow(start), startHigh(start), endLow(end), endHigh(end), size(1){}
+
+	bool contains(int start, int end, int threshold)
+	{
+		return
+				(
+					std::abs(start-startHigh)<threshold or
+					std::abs(start-startLow)<threshold
+				)
+				and
+				(
+					std::abs(end-endHigh)<threshold or
+					std::abs(end-endLow)<threshold
+				);
+
+	}
 };
 
 class Clusterizer
@@ -42,8 +57,8 @@ public:
 
 		for(size_t i=0; i<loops.size();i+=2)
 		{
-			int start 	= loops[i];
-			int end 	= loops[i+1];
+			int start 	= std::max(loops[i],loops[i+1]);
+			int end 	= std::min(loops[i],loops[i+1]);
 
 			if(_clustersFound.empty())
 			{
@@ -54,34 +69,30 @@ public:
 			}
 			else
 			{
-				cluster& currentCluster = _clustersFound.back();
-				if(
-						(
-							std::abs(start-currentCluster.startHigh)<threshold or
-							std::abs(start-currentCluster.startLow)<threshold
-						)
-						and
-						(
-							std::abs(end-currentCluster.endHigh)<threshold or
-							std::abs(end-currentCluster.endLow)<threshold
-						)
-				)
+				cluster* currentCluster = NULL;
+				//Search for a cluster where it can belong
+				for(size_t i=0; i<_clustersFound.size(); i++)
 				{
-					currentCluster.size++;
-					membership.push_back(_clustersFound.size()-1);
-					if(start<currentCluster.startLow)	currentCluster.startLow = start;
-					if(start>currentCluster.startHigh)	currentCluster.startHigh = start;
+					if(_clustersFound[i].contains(start,end,threshold))
+					{
+						currentCluster = &_clustersFound[i];
+						currentCluster->size++;
+						membership.push_back(i);
+						if(start<currentCluster->startLow)	currentCluster->startLow = start;
+						if(start>currentCluster->startHigh)	currentCluster->startHigh = start;
 
-					if(end<currentCluster.endLow) currentCluster.endLow = end;
-					if(end>currentCluster.endHigh) currentCluster.endHigh = end;
+						if(end<currentCluster->endLow) currentCluster->endLow = end;
+						if(end>currentCluster->endHigh) currentCluster->endHigh = end;
+
+						break;
+					}
 				}
-				else
+				if(currentCluster == NULL)
 				{
 					cluster s(start,end);
 					_clustersFound.push_back(s);
 					membership.push_back(_clustersFound.size()-1);
 				}
-
 			}
 		}
 		if(0)

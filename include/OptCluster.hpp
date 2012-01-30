@@ -119,14 +119,14 @@ class GraphStorage
 			e.transform = thisEdge->measurement();
 			e.information = thisEdge->information();
 
-			std::cout<<e.from<<" > "<<e.to<<std::endl;
+			//std::cout<<e.from<<" > "<<e.to<<std::endl;
 
 			_edges.push_back(e);
 
 		}
 
-		std::cout<<_vertices.size()<<" vertices stored"<<std::endl;
-		std::cout<<_edges.size()<<" odom stored"<<std::endl;
+		//std::cout<<_vertices.size()<<" vertices stored"<<std::endl;
+		//std::cout<<_edges.size()<<" odom stored"<<std::endl;
 
 	}
 
@@ -200,6 +200,8 @@ class ClusterOptimizer
 	GraphStorage graphStorage;
 	ClusterManager clusterManager;
 
+	std::ofstream video;
+
 public:
 	ClusterOptimizer()
 	{
@@ -209,6 +211,7 @@ public:
 		optimizer.setSolver(solver);
 		vertexCount = 0;
 		initialized = false;
+		video.open("videoOut.txt");
 	}
 	bool write(std::string filename)
 	{
@@ -220,15 +223,11 @@ public:
 			out<<"VERTEX_SE2 "<<dynamic_cast<g2o::VertexSE2*>(_vertices[i])->id()<<" "; dynamic_cast<g2o::VertexSE2*>(_vertices[i])->write(out); out<<std::endl;
 		}
 
-
-
 		for(size_t i=0; i<_odomSet.size(); i++)
 		{
 			g2o::EdgeSE2* thisEdge = dynamic_cast<g2o::EdgeSE2*>(_odomSet[i]);
 			out<<"EDGE_SE2 "<<thisEdge->vertices()[0]->id()<<" "<<thisEdge->vertices()[1]->id()<<" "; thisEdge->write(out); out<<std::endl;
 		}
-
-
 
 		for(size_t i=0; i<_edgeSet.size(); i++)
 		{
@@ -238,13 +237,9 @@ public:
 				out<<"EDGE_SE2 "<<thisEdge->vertices()[0]->id()<<" "<<thisEdge->vertices()[1]->id()<<" "; thisEdge->write(out); out<<std::endl;
 			}
 		}
-
-
-
 		//optimizer.save(out);
 		if(out.good()) return true;
 		return false;
-
 
 	}
 
@@ -254,49 +249,6 @@ public:
 		graphStorage.get(optimizer);
 
 		return true;
-		/*
-
-		int numberOfVertices = optimizer.vertices().size();
-		if(numberOfVertices == 0)
-		{
-			std::cerr<<"No vertices in the graph "<<std::endl;
-			return false;
-		}
-
-		for(int i=0 ; i<numberOfVertices ; i++)
-			_vertices.insert(_vertices.end(),optimizer.vertex(i));
-
-		g2o::OptimizableGraph::EdgeSet::iterator edgeIterator = optimizer.edges().begin(), end = optimizer.edges().end();
-
-
-		for(; edgeIterator!=end; edgeIterator++)
-		{
-			g2o::EdgeSE2 * thisEdge = dynamic_cast<g2o::EdgeSE2*>(*edgeIterator);
-			//thisEdge->setRobustKernel(true);
-			//thisEdge->setHuberWidth(5.0);
-			if(
-					((thisEdge->vertices()[1])->id() - (thisEdge->vertices()[0])->id())
-					==1
-			)
-			{
-				//std::cout<<"O "<<thisEdge->vertices()[0]->id()<<" "<<thisEdge->vertices()[1]->id()<<std::endl;
-				_odomSet.push_back(thisEdge);
-			}
-			else
-			{
-				//std::cout<<"L "<<thisEdge->vertices()[0]->id()<<" "<<thisEdge->vertices()[1]->id()<<std::endl;
-				_edgeSet.push_back(thisEdge);
-			}
-			//_edgeSetEnabled = std::vector<bool>(_edgeSet.size(),true);
-		}
-		std::sort(_edgeSet.begin(), _edgeSet.end(), loopSort);
-	*/
-//		for(size_t i=0 ; i<_edgeSet.size(); i++)
-//		{
-//			std::cout<<_edgeSet[i]->vertices()[0]->id()<<" ";
-//		}
-//		std::cout<<std::endl;
-
 
 	}
 
@@ -380,18 +332,23 @@ public:
 		for( ; it!=end ; it++)
 		{
 			(*it)->computeError();
-			if( (*it)->chi2()<5.99){ std::cout<< "[ ]"; isOkay.push_back(true); }
-			else { std::cout<<"[X]"; isOkay.push_back(false); }
+			if( (*it)->chi2()<5.99){ //std::cout<< "[ ]";
+				isOkay.push_back(true);
+			}
+			else { //std::cout<<"[X]";
+			isOkay.push_back(false); }
 		}
 		std::cout<<std::endl;
 	}
 
 	void IC(int clusterID, std::vector<int>& membership, const int iterations)
 	{
+		video<<"1 "<<clusterID<<" ";
 		//optimizer.clear();
 		//read(_filename);
 
 		reload();
+
 
 		g2o::OptimizableGraph::EdgeSet activeEdges;
 		activeEdges.insert(_odomSet.begin(),_odomSet.end());
@@ -422,12 +379,12 @@ public:
 			//std::cout<<(*it)->chi2()<<" ";
 			if( (*it)->chi2()<5.99)
 			{
-				std::cout<< "[ ]";
+				//std::cout<< "[ ]";
 				goodOnes[i]=true;
 				correctOnes ++;
 				chiSquare+= (*it)->chi2();
 			}
-			else std::cout<<"[X]";
+			//else std::cout<<"[X]";
 		}
 		std::cout<<std::endl;
 
@@ -435,9 +392,16 @@ public:
 		{
 			double threshold = boost::math::quantile(boost::math::chi_squared(3*correctOnes-1),0.95);
 			double threshold2 = boost::math::quantile(boost::math::chi_squared(3*optimizer.activeEdges().size()-1),0.95);
-			std::cout<<" Chi2 "<<chiSquare<<"/"<<threshold<<" "<<optimizer.activeChi2()<<"/"<<threshold2<<std::endl;
-		}
+			//std::cout<<" Chi2 "<<chiSquare<<"/"<<threshold<<" "<<optimizer.activeChi2()<<"/"<<threshold2<<std::endl;
 
+
+			if(optimizer.activeChi2() > threshold2 )
+			{
+				//std::cout<<"AllRejected due to T2"<<std::endl;
+				goodOnes = std::vector<bool>(loopEdges.size(),false);
+				//std::cin.get();
+			}
+		}
 
 		for(size_t i=0, j=0 , runTill = membership.size(); i< runTill ; i++)
 		{
@@ -445,24 +409,37 @@ public:
 			{
 				if(goodOnes[j]==false)
 				{
+					//video<<"0 ";
 					membership[i]= -2;
 				}
+				//else
+					//video<<"1 ";
 				j++;
 			}
 		}
+
+		//video<<std::endl;
 
 	}
 
 	bool JC( std::vector<int>& H, const std::vector<int>& membership, int iterations, std::vector<int>& rejected, int checkLast = 0)
 	{
-
+		//video<<"2 "<<H.size()<<" ";
 		if(H.empty() or checkLast == 0)
 		{
-			std::cout<<" H is empty! "<<std::endl;
+			for(size_t i=0 , runTill = H.size(); i< runTill; i++)
+			{
+					video<<H[i]<<" ";
+			}
+			//video<<"1 "<<std::endl;
+
+			//std::cout<<" H is empty! "<<std::endl;
 			return true;
 		}
 
 		reload();
+
+
 
 		g2o::OptimizableGraph::EdgeSet activeEdges;
 		activeEdges.insert(_odomSet.begin(),_odomSet.end());
@@ -476,6 +453,7 @@ public:
 		for(size_t i=0 , runTill = H.size(); i< runTill; i++)
 		{
 			//std::cout<<"Adding Cluster with iD "<<H[i]<<std::endl;
+			video<<H[i]<<" ";
 			int added = initializeCluster(H[i],membership,activeEdges,loopEdges);
 			count[i]=added;
 			for(int j=0; j<added ; j++)
@@ -537,11 +515,15 @@ public:
 
 		double allThreshold =boost::math::quantile(boost::math::chi_squared(3* optimizer.edges().size()-1),0.95);
 		double threshold = boost::math::quantile(boost::math::chi_squared(3*loopEdges.size()-1),0.95);
-		std::cout<<"ChiSqaure "<<chiSquare<<"/"<<threshold<<" "
-				<<optimizer.activeChi2()<<"/"<<allThreshold<<std::endl;
+		//std::cout<<"ChiSqaure "<<chiSquare<<"/"<<threshold<<" "
+		//		<<optimizer.activeChi2()<<"/"<<allThreshold<<std::endl;
 
-		if (chiSquare < threshold and optimizer.activeChi2()< allThreshold) //  // and
-			return true;
+		if (chiSquare < threshold
+				and optimizer.activeChi2()< allThreshold)
+		{
+			//video<<"1 "<<std::endl;
+					return true;
+		}
 		else
 		{
 			double maxAvg = 0; int maxIndex = -1;
@@ -559,63 +541,11 @@ public:
 			H.erase(H.begin()+maxIndex);
 			//rejected.push_back(H[maxLinkErrorID]);
 			//H.erase(H.begin()+maxLinkErrorID);
-
+			//video<<"0 "<<H[maxIndex]<<std::endl;
 			return JC(H,membership,iterations,rejected, checkLast-1);
 		}
 
 	}
-/*
-	void JointSelectionClusters(std::vector<int>& H, const std::vector<int>& membership, int iterations, int numClusters, int depth = 0)
-	{
-		std::cout<<" --- ";
-		for(size_t i=0 ; i< H.size() ; i++)
-		{
-			std::cout<<H[i]<<" ";
-		}
-		std::cout<<std::endl;
-
-		if(depth >= numClusters-1)
-		{
-			std::cout<<" Leaf node "<<std::endl;
-			int currentPairing = 0;
-			for(size_t i=0 ; i< H.size() ; i++)
-			{
-				std::cout<<H[i]<<" ";
-				if(H[i]>-1) currentPairing++;
-			}
-			if(currentPairing > _bestHPairings)
-			{
-				_bestH = H;
-				_bestHPairings = currentPairing;
-			}
-			std::cout<<std::endl;
-
-			return;
-		}
-
-		std::vector<int> _H = H;
-		_H.push_back(depth);
-		if(JC(_H,membership,iterations))
-		{
-			JointSelectionClusters(_H,membership,iterations,numClusters,depth+1);
-		}
-
-		int currentPairing = 0;
-
-		for(size_t i=0; i<H.size(); i++)
-		{
-			if(H[i]> 0) currentPairing++;
-		}
-
-		_H = H;
-		if(currentPairing + (numClusters-depth-1) > _bestHPairings )
-		{
-			_H.push_back(-1);
-			JointSelectionClusters(_H,membership,iterations,numClusters,depth+1);
-		}
-		return;
-	}
-	*/
 
 	void display(std::set<int>&s )
 	{
@@ -629,14 +559,14 @@ public:
 
 	void run(int iterations, int clusterThreshold)
 	{
-		std::ofstream mFile("membership.txt");
+		//std::ofstream mFile("membership.txt");
 
-		std::cerr<<"run"<<std::endl;
+		//std::cerr<<"run"<<std::endl;
 		std::vector<int> loops;
 
 		for(size_t i =0 , runTill = _edgeSet.size() ; i<runTill; i++)
 		{
-			std::cout<<_edgeSet[i]->vertices()[0]->id()<<" -> "<<_edgeSet[i]->vertices()[1]->id()<<std::endl;
+			//std::cout<<_edgeSet[i]->vertices()[0]->id()<<" -> "<<_edgeSet[i]->vertices()[1]->id()<<std::endl;
 			loops.push_back(_edgeSet[i]->vertices()[0]->id());
 			loops.push_back(_edgeSet[i]->vertices()[1]->id());
 		}
@@ -647,14 +577,17 @@ public:
 		clusterizer.clusterize(loops,clusterThreshold, membership, clusterCount);
 
 
-#if 1
+#if 0
+		video<<"0 ";
 		for(size_t i =0 ; i<_edgeSet.size(); i++)
 		{
 			mFile<<membership[i]<<" ";
+			video<<membership[i]<<" ";
 		}
 		mFile<<std::endl;
+		video<<std::endl;
 #endif
-		std::cout<<" done clusters "<<std::endl;
+		//std::cout<<" done clusters "<<std::endl;
 
 		clusterManager.init(membership,_edgeSet,clusterCount);
 
@@ -664,13 +597,16 @@ public:
 
 		}
 		clusterManager.update(membership,_edgeSet,clusterCount);
-
+/*
+		video<<"0 ";
 		for(size_t i=0 ; i<membership.size(); i++)
 		{
 			std::cout<<membership[i]<<" ";
+			video<<membership[i]<<" ";
 		}
 		std::cout<<std::endl;
-
+		video<<std::endl;
+*/
 		std::set<int> goodClusters,			// Clusters selected in every iteration
 					  selectedClusters, 	// Overall set of JC sets that are selected
 					  rejectedClusters;		// Clusters that have been rejected (NOT JC) in the prev iteration.
@@ -745,8 +681,8 @@ public:
 			}
 			rejectedClusters.insert(rejected.begin(), rejected.end());
 
-			display(selectedClusters);
-			std::cout<<"Rejected List" << std::endl ; display(rejectedClusters);
+			//display(selectedClusters);
+			//std::cout<<"Rejected List" << std::endl ; display(rejectedClusters);
 
 		}
 
@@ -793,8 +729,8 @@ public:
 		}
 
 		reload();
-		write("check.g2o");
-
+		//write("check.g2o");
+/*
 		for(size_t i=0 ; i<membership.size() ; i++)
 		{
 			if(selectedClusters.find(membership[i])!=selectedClusters.end())
@@ -805,7 +741,7 @@ public:
 		mFile<<std::endl;
 
 		mFile.close();
-
+*/
 		return;
 
 	}

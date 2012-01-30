@@ -5,6 +5,8 @@
 //#include <ClusterJCBB.hpp>
 #include<PersisCluster.hpp>
 
+//#include<ClusterRJC.hpp>
+
 using namespace Simulator;
 #define STEP_LENGTH 1.0
 
@@ -111,13 +113,42 @@ int main(int argc, char** argv)
 		}
 	}
 	
-	//optimizer.run(numIterations, clusterThreshold);
+#if 0
+	optimizer.run(numIterations, clusterThreshold);
 
-	optimizer.run(numIterations, clusterThreshold,1100);
-	optimizer.run(numIterations, clusterThreshold, 2400);
-	optimizer.run(numIterations, clusterThreshold, 3700);
-	optimizer.run(numIterations, clusterThreshold, 5400);
-	optimizer.run(numIterations, clusterThreshold, 7000);
+#else
+
+//	6973
+//	15331
+//	21809
+//	30144
+//	optimizer.run(numIterations, clusterThreshold, 1761);
+//	optimizer.run(numIterations, clusterThreshold, 8341);
+//	optimizer.run(numIterations, clusterThreshold, 14754);
+//	optimizer.run(numIterations, clusterThreshold, 22942);
+//	optimizer.run(numIterations, clusterThreshold, 30896);
+
+//		optimizer.run(numIterations, clusterThreshold, 6973);
+//		optimizer.run(numIterations, clusterThreshold, 15331);
+//		optimizer.run(numIterations, clusterThreshold, 21809);
+//		optimizer.run(numIterations, clusterThreshold, 30144);
+//		optimizer.run(numIterations, clusterThreshold, 40928);
+// Laser Odometry Bicocca
+	system("date >> icremental.txt");
+	optimizer.run(numIterations, clusterThreshold, 7350);
+	system("date >> icremental.txt");
+	optimizer.run(numIterations, clusterThreshold, 16126);
+	system("date >> icremental.txt");
+	optimizer.run(numIterations, clusterThreshold, 22987);
+	system("date >> icremental.txt");
+	optimizer.run(numIterations, clusterThreshold, 31777);
+	system("date >> icremental.txt");
+	optimizer.run(numIterations, clusterThreshold, 43116);
+	system("date >> icremental.txt");
+
+
+
+#endif
 
 
 	//std::vector<double> res;

@@ -245,6 +245,9 @@ class ClusterOptimizer
 	GraphStorage graphStorage, graphSubSet;
 	ClusterManager clusterManager;
 
+	int _clustersTested;
+	std::vector<int> _membership;
+
 public:
 	ClusterOptimizer()
 	{
@@ -254,6 +257,8 @@ public:
 		optimizer.setSolver(solver);
 		vertexCount = 0;
 		initialized = false;
+		_clustersTested = 0;
+
 	}
 	bool write(std::string filename, int maxVertexID = -1)
 	{
@@ -263,7 +268,7 @@ public:
 
 		for(size_t i=0; i<_vertices.size();i++)
 		{
-			if(_vertices[i]->id()< maxVertexID)
+			if(_vertices[i]->id()<=maxVertexID)
 			{
 				out<<"VERTEX_SE2 "<<dynamic_cast<g2o::VertexSE2*>(_vertices[i])->id()<<" "; dynamic_cast<g2o::VertexSE2*>(_vertices[i])->write(out); out<<std::endl;
 			}
@@ -274,7 +279,7 @@ public:
 		for(size_t i=0; i<_odomSet.size(); i++)
 		{
 			g2o::EdgeSE2* thisEdge = dynamic_cast<g2o::EdgeSE2*>(_odomSet[i]);
-			if(thisEdge->vertices()[0]->id()< maxVertexID and thisEdge->vertices()[1]->id()< maxVertexID)
+			if(thisEdge->vertices()[0]->id()<= maxVertexID and thisEdge->vertices()[1]->id()<=maxVertexID)
 			{
 				out<<"EDGE_SE2 "<<thisEdge->vertices()[0]->id()<<" "<<thisEdge->vertices()[1]->id()<<" "; thisEdge->write(out); out<<std::endl;
 			}
@@ -305,54 +310,8 @@ public:
 
 	bool reload()
 	{
-		//_odomSet.clear(); _edgeSet.clear(); _vertices.clear();
 		graphStorage.get(optimizer);
-
 		return true;
-		/*
-
-		int numberOfVertices = optimizer.vertices().size();
-		if(numberOfVertices == 0)
-		{
-			std::cerr<<"No vertices in the graph "<<std::endl;
-			return false;
-		}
-
-		for(int i=0 ; i<numberOfVertices ; i++)
-			_vertices.insert(_vertices.end(),optimizer.vertex(i));
-
-		g2o::OptimizableGraph::EdgeSet::iterator edgeIterator = optimizer.edges().begin(), end = optimizer.edges().end();
-
-
-		for(; edgeIterator!=end; edgeIterator++)
-		{
-			g2o::EdgeSE2 * thisEdge = dynamic_cast<g2o::EdgeSE2*>(*edgeIterator);
-			//thisEdge->setRobustKernel(true);
-			//thisEdge->setHuberWidth(5.0);
-			if(
-					((thisEdge->vertices()[1])->id() - (thisEdge->vertices()[0])->id())
-					==1
-			)
-			{
-				//std::cout<<"O "<<thisEdge->vertices()[0]->id()<<" "<<thisEdge->vertices()[1]->id()<<std::endl;
-				_odomSet.push_back(thisEdge);
-			}
-			else
-			{
-				//std::cout<<"L "<<thisEdge->vertices()[0]->id()<<" "<<thisEdge->vertices()[1]->id()<<std::endl;
-				_edgeSet.push_back(thisEdge);
-			}
-			//_edgeSetEnabled = std::vector<bool>(_edgeSet.size(),true);
-		}
-		std::sort(_edgeSet.begin(), _edgeSet.end(), loopSort);
-	*/
-//		for(size_t i=0 ; i<_edgeSet.size(); i++)
-//		{
-//			std::cout<<_edgeSet[i]->vertices()[0]->id()<<" ";
-//		}
-//		std::cout<<std::endl;
-
-
 	}
 
 	static bool loopSort(g2o::OptimizableGraph::Edge* e1, g2o::OptimizableGraph::Edge* e2)
@@ -462,7 +421,7 @@ public:
 		std::cout<<std::endl;
 	}
 
-	void IC(int clusterID, std::vector<int>& membership, const int iterations)
+	void IC(int clusterID, std::vector<int>& membership, const int iterations, int maxVertexID)
 	{
 		//optimizer.clear();
 		//read(_filename);
@@ -470,7 +429,17 @@ public:
 		reload();
 
 		g2o::OptimizableGraph::EdgeSet activeEdges;
-		activeEdges.insert(_odomSet.begin(),_odomSet.end());
+
+		for( std::vector<g2o::OptimizableGraph::Edge*>::iterator oIt = _odomSet.begin();
+				oIt!=_odomSet.end() ; oIt++)
+		{
+			if( (*oIt)->vertices()[1]->id() <= maxVertexID) // If the "To" edge is within limits
+			{
+				activeEdges.insert(*oIt);
+			}
+		}
+
+		//activeEdges.insert(_odomSet.begin(),_odomSet.end());
 
 		std::vector<g2o::EdgeSE2*> loopEdges;
 
@@ -512,6 +481,11 @@ public:
 			double threshold = boost::math::quantile(boost::math::chi_squared(3*correctOnes-1),0.95);
 			double threshold2 = boost::math::quantile(boost::math::chi_squared(3*optimizer.activeEdges().size()-1),0.95);
 			std::cout<<" Chi2 "<<chiSquare<<"/"<<threshold<<" "<<optimizer.activeChi2()<<"/"<<threshold2<<std::endl;
+			if(optimizer.activeChi2() > threshold2)
+			{
+				std::cout<<"All wrong!"<<std::endl;
+				goodOnes = std::vector<bool>(loopEdges.size(),false);
+			}
 		}
 
 
@@ -529,7 +503,7 @@ public:
 
 	}
 
-	bool JC( std::vector<int>& H, const std::vector<int>& membership, int iterations, std::vector<int>& rejected, int checkLast = 0)
+	bool JC( std::vector<int>& H, const std::vector<int>& membership, int iterations, std::vector<int>& rejected, int checkLast, int maxVertexID)
 	{
 
 		if(H.empty() or checkLast == 0)
@@ -541,7 +515,15 @@ public:
 		reload();
 
 		g2o::OptimizableGraph::EdgeSet activeEdges;
-		activeEdges.insert(_odomSet.begin(),_odomSet.end());
+		for( std::vector<g2o::OptimizableGraph::Edge*>::iterator oIt = _odomSet.begin();
+						oIt!=_odomSet.end() ; oIt++)
+		{
+			if( (*oIt)->vertices()[1]->id() <= maxVertexID) // If the "To" edge is within limits
+			{
+				activeEdges.insert(*oIt);
+			}
+		}
+		//activeEdges.insert(_odomSet.begin(),_odomSet.end());
 
 		std::vector<g2o::EdgeSE2*> loopEdges;
 
@@ -605,18 +587,32 @@ public:
 		//std::cout<<std::endl;
 
 		//std::cout<<"Avg. Residual per cluster .. "<<std::endl;
+
+		std::set<int> not_IC;
+
 		for(size_t i=0; i<H.size(); i++)
 		{
+			double thisClusterResidualThreshold  = boost::math::quantile(boost::math::chi_squared(3*count[i]-1),0.95);
 			std::cout<<H[i]<<" ";
-			std::cout<<errors[i]/count[i]<<std::endl;
+			std::cout<<errors[i]<<"/"<<thisClusterResidualThreshold;
+			if(errors[i]>thisClusterResidualThreshold)
+			{
+				std::cout<<" X"<<std::endl;
+				not_IC.insert(H[i]);
+			}
+			else
+				std::cout<<std::endl;
+
 		}
 
-		double allThreshold =boost::math::quantile(boost::math::chi_squared(3* optimizer.edges().size()-1),0.95);
+		double allThreshold =boost::math::quantile(boost::math::chi_squared(3* optimizer.activeEdges().size()-1),0.95);
 		double threshold = boost::math::quantile(boost::math::chi_squared(3*loopEdges.size()-1),0.95);
 		std::cout<<"ChiSqaure "<<chiSquare<<"/"<<threshold<<" "
 				<<optimizer.activeChi2()<<"/"<<allThreshold<<std::endl;
 
-		if (chiSquare < threshold )// and optimizer.activeChi2()< allThreshold) //  // and
+		std::cout<<"(NOT IC) "; display(not_IC); std::cout<<std::endl;
+
+		if (chiSquare < threshold and optimizer.activeChi2()< allThreshold) //  // and
 			return true;
 		else
 		{
@@ -624,9 +620,9 @@ public:
 			for(size_t i= H.size() - checkLast ; i<H.size(); i++)
 			//for(size_t i= 0 ; i<H.size(); i++)
 			{
-				if(errors[i] > maxAvg)//if(errors[i]/count[i] > maxAvg)
+				if(errors[i]/boost::math::quantile(boost::math::chi_squared(3* count[i]-1),0.95) > maxAvg)//if(errors[i]/count[i] > maxAvg)
 				{
-					maxAvg = errors[i];//maxAvg = errors[i]/count[i];
+					maxAvg = errors[i]/boost::math::quantile(boost::math::chi_squared(3* count[i]-1),0.95);;//maxAvg = errors[i]/count[i];
 					maxIndex = i;
 				}
 			}
@@ -636,7 +632,7 @@ public:
 			//rejected.push_back(H[maxLinkErrorID]);
 			//H.erase(H.begin()+maxLinkErrorID);
 
-			return JC(H,membership,iterations,rejected, checkLast-1);
+			return JC(H,membership,iterations,rejected, checkLast-1, maxVertexID);
 		}
 
 	}
@@ -735,7 +731,7 @@ public:
 		{
 			int start = _edgeSet[i]->vertices()[0]->id();
 			int end = _edgeSet[i]->vertices()[1]->id();
-			if(start<maxVertexID and end<maxVertexID)
+			if(start<=maxVertexID and end<=maxVertexID)
 			{
 				std::cout<<_edgeSet[i]->vertices()[0]->id()<<" -> "<<_edgeSet[i]->vertices()[1]->id()<<std::endl;
 				loops.push_back(start);
@@ -759,11 +755,28 @@ public:
 
 		clusterManager.init(membership,_edgeSet,clusterCount);
 
-		for(int i=0; i< clusterCount; i++)
-		{
-			IC(i,membership,iterations);
 
+		for(int i= _clustersTested ; i<clusterCount; i++)
+		{
+			std::cout<<"IC for cluster "<<i<<std::endl;
+			IC(i,membership,iterations, maxVertexID);
 		}
+
+		for(size_t i=0 ; i<membership.size(); i++)
+		{
+			std::cout<<membership[i]<<" ";
+		}
+		std::cout<<std::endl;
+
+		for(size_t i=0 ; i<_membership.size();i++)
+		{
+			std::cout<<_membership[i]<<" ("<<membership[i]<<") ";
+			//membership[i] = _membership[i];
+		}
+
+		std::cout<<std::endl;
+
+		//std::cin.get();
 
 		clusterManager.update(membership,_edgeSet,clusterCount);
 
@@ -794,7 +807,15 @@ public:
 			activeEdges.clear();
 			loopEdges.clear();
 
-			activeEdges.insert(_odomSet.begin(), _odomSet.end());
+			for( std::vector<g2o::OptimizableGraph::Edge*>::iterator oIt = _odomSet.begin();
+							oIt!=_odomSet.end() ; oIt++)
+					{
+						if( (*oIt)->vertices()[1]->id() <= maxVertexID) // If the "To" edge is within limits
+						{
+							activeEdges.insert(*oIt);
+						}
+					}
+			//activeEdges.insert(_odomSet.begin(), _odomSet.end());
 
 			for(int i=0 ; i<clusterCount; i++)
 			{
@@ -837,7 +858,7 @@ public:
 
 			int oldSize = selectedClusters.size();
 
-			JC(H,membership,iterations, rejected, goodClusters.size());
+			JC(H,membership,iterations, rejected, goodClusters.size(),maxVertexID);
 
 			goodClusters.clear();
 			selectedClusters.clear();
@@ -864,13 +885,29 @@ public:
 		}
 
 		reload();
-		H.clear();
-		H.insert(H.end(),selectedClusters.begin(), selectedClusters.end());
+
+		std::stringstream fname;
+		fname<<maxVertexID<<"_second.g2o";
+		write(fname.str(),maxVertexID);
+
+
+		//H.clear();
+		//H.insert(H.end(),selectedClusters.begin(), selectedClusters.end());
 
 		activeEdges.clear();
 		loopEdges.clear();
 
 		activeEdges.insert(_odomSet.begin(), _odomSet.end());
+
+//		for( std::vector<g2o::OptimizableGraph::Edge*>::iterator oIt = _odomSet.begin();
+//									oIt!=_odomSet.end() ; oIt++)
+//		{
+//			if( (*oIt)->vertices()[1]->id() <= maxVertexID) // If the "To" edge is within limits
+//			{
+//				activeEdges.insert(*oIt);
+//			}
+//		}
+
 
 		for(int i=0 ; i<clusterCount; i++)
 		{
@@ -890,11 +927,10 @@ public:
 
 		reload();
 
-		std::stringstream fname;
-		fname<<maxVertexID<<"_second.g2o";
-		write(fname.str(),maxVertexID);
+		_clustersTested = clusterCount;
+		_membership = membership;
 
-
+		/*
 		for(size_t i=0; i<membership.size(); i++)
 		{
 			_edgeSet[i]->computeError();
@@ -904,7 +940,7 @@ public:
 			}
 			else{	std::cout<<"[X]";}
 		}
-
+		*/
 		for(size_t i=0 ; i<membership.size() ; i++)
 		{
 			if(selectedClusters.find(membership[i])!=selectedClusters.end())
@@ -915,6 +951,8 @@ public:
 		mFile<<std::endl;
 
 		mFile.close();
+
+		//std::cin.get();
 
 		return;
 

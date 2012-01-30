@@ -392,6 +392,11 @@ public:
 			double threshold = boost::math::quantile(boost::math::chi_squared(3*correctOnes-1),0.95);
 			double threshold2 = boost::math::quantile(boost::math::chi_squared(3*optimizer.activeEdges().size()-1),0.95);
 			std::cout<<" Chi2 "<<chiSquare<<"/"<<threshold<<" "<<optimizer.activeChi2()<<"/"<<threshold2<<std::endl;
+
+			if(optimizer.activeChi2() > threshold2)
+			{
+				goodOnes = std::vector<bool>(loopEdges.size(),false);
+			}
 		}
 
 
@@ -409,7 +414,7 @@ public:
 
 	}
 
-	bool JC( std::vector<int>& H, const std::vector<int>& membership, int iterations)//, std::vector<int>& rejected, int checkLast = 0)
+	bool JC( std::vector<int>& H, const std::vector<int>& membership, int iterations, double& chi2)//, std::vector<int>& rejected, int checkLast = 0)
 	{
 
 		if(H.empty())
@@ -418,8 +423,8 @@ public:
 			return true;
 		}
 
-		if(H.back()==-1)
-			return true;
+		//if(H.back()==-1)
+		//	return true;
 
 		//optimizer.clear();
 		//read(_filename);
@@ -466,12 +471,14 @@ public:
 			chiSquare += (*it)->chi2();
 		}
 
-		previousChi2 = chiSquare;
+
 
 		double allThreshold =boost::math::quantile(boost::math::chi_squared(3* optimizer.edges().size()-1),0.95);
 		double threshold = boost::math::quantile(boost::math::chi_squared(3*loopEdges.size()-1),0.95);
 		std::cout<<"ChiSqaure "<<chiSquare<<"/"<<threshold<<" "
 				<<optimizer.activeChi2()<<"/"<<allThreshold<<std::endl;
+
+		chi2 = chiSquare/threshold;
 
 		if (chiSquare < threshold and optimizer.activeChi2()< allThreshold) //  // and
 			return true;
@@ -482,7 +489,13 @@ public:
 
 	}
 
-	void JointSelectionClusters(std::vector<int>& H, const std::vector<int>& membership, int iterations, int numClusters, int depth = 0)
+	void JointSelectionClusters(
+			std::vector<int>& H,
+			const std::vector<int>& membership,
+			int iterations, int numClusters,
+			int depth,
+			std::vector<int>& clusters
+			)
 	{
 		std::cout<<" --- ";
 		for(size_t i=0 ; i< H.size() ; i++)
@@ -493,6 +506,12 @@ public:
 
 		if(depth >= numClusters)
 		{
+			double chi2;
+			if(!JC(H,membership,iterations,chi2))
+			{
+				std::cout<<"LEFT NODE -- NOT COMPATABLE !!"<<std::endl;
+				std::cin.get();
+			}
 			std::cout<<" Leaf node "<<std::endl;
 			int currentPairing = 0;
 			for(size_t i=0 ; i< H.size() ; i++)
@@ -503,13 +522,26 @@ public:
 
 			if( (currentPairing > _bestHPairings)
 					or
-					(currentPairing == _bestHPairings and _bestChi2 > previousChi2))
+					(currentPairing == _bestHPairings and _bestChi2 > chi2))
 			{
 				_bestH = H;
 				_bestHPairings = currentPairing;
-				_bestChi2 = previousChi2;
+				_bestChi2 = chi2;
 			}
 
+			std::cout<<std::endl;
+			std::cout<<"-------------------------------------"<<std::endl;
+			for(size_t i=0 ; i< H.size() ; i++)
+			{
+				if(H[i]>=0)
+				std::cout<<H[i]<<" ";
+			}
+			std::cout<<std::endl;
+			std::cout<<currentPairing<<" "<<chi2<<std::endl;
+			std::cout<<_bestHPairings<<" "<<_bestChi2<<std::endl;
+			std::cout<<"-------------------------------------"<<std::endl;
+
+			//std::cin.get();
 			std::cout<<std::endl;
 			std::cerr<<"Done leaf noce"<<std::endl;
 
@@ -519,25 +551,30 @@ public:
 		}
 
 		std::vector<int> _H = H;
-		_H.push_back(depth);
-		if(JC(_H,membership,iterations))
+		double chi2;
+
+		_H.push_back(clusters[depth]);
+
+		if(JC(_H,membership,iterations,chi2))
 		{
-			JointSelectionClusters(_H,membership,iterations,numClusters,depth+1);
+			std::cout<<"Okay, with chi2 = "<<chi2<<std::endl;
+			JointSelectionClusters(_H,membership,iterations,numClusters,depth+1,clusters);
 		}
 
 		int currentPairing = 0;
 
 		for(size_t i=0; i<H.size(); i++)
 		{
-			if(H[i]> 0) currentPairing++;
+			if(H[i]>=0) currentPairing++;
 		}
 
 		_H = H;
-		if(currentPairing + (numClusters-depth-1) > _bestHPairings )
+		if(currentPairing + (numClusters-depth-1) >= _bestHPairings )
 		{
 			_H.push_back(-1);
-			JointSelectionClusters(_H,membership,iterations,numClusters,depth+1);
+			JointSelectionClusters(_H,membership,iterations,numClusters,depth+1,clusters);
 		}
+
 		return;
 	}
 
@@ -569,28 +606,32 @@ public:
 		std::vector<int> membership;
 		int clusterCount;
 		clusterizer.clusterize(loops,clusterThreshold, membership, clusterCount);
+		std::cout<<" done clusters "<<std::endl;
 
 		for(size_t i =0 ; i<_edgeSet.size(); i++)
 		{
 			std::cout<<membership[i]<<" ";
-			std::cout<<_edgeSet[i]->vertices()[0]->id()<<" -> "<<_edgeSet[i]->vertices()[1]->id()<<std::endl;
-			loops.push_back(_edgeSet[i]->vertices()[0]->id());
-			loops.push_back(_edgeSet[i]->vertices()[1]->id());
 		}
-
-		std::cout<<" done clusters "<<std::endl;
 
 		_edgeSetEnabled = std::vector<bool>(membership.size(),false);
 
 		for(int i=0; i< clusterCount; i++)
 		{
 			IC(i,membership,iterations);
-
 		}
+
+		std::vector<int> clusterMembers(clusterCount,0);
 
 		for(size_t i=0 ; i<membership.size(); i++)
 		{
+			if(membership[i]>=0 ) clusterMembers[membership[i]]++;
 			std::cout<<membership[i]<<" ";
+		}
+		std::cout<<std::endl;
+
+		for(size_t i=0; i<clusterMembers.size(); i++)
+		{
+			std::cout<<clusterMembers[i]<<" ";
 		}
 		std::cout<<std::endl;
 
@@ -606,7 +647,14 @@ public:
 
 		optimizer.setVerbose(false);
 
-		JointSelectionClusters(H,membership,iterations,clusterCount,0);
+		std::vector<int> clusters;
+
+		for(size_t i=0; i<clusterMembers.size() ; i++)
+		{
+			if(clusterMembers[i]>0) clusters.push_back(i);
+		}
+
+		JointSelectionClusters(H,membership,iterations,clusters.size(),0,clusters);
 
 		std::cerr<<"Return .. "<<std::endl;
 
